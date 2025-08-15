@@ -1,0 +1,191 @@
+:root {
+  --bg: #bde8ff; /* céu azul claro */
+  --ink: #6b4e3d; /* marrom suave para texto */
+  --accent: #ff9ecb; /* rosa claro */
+  --accent2: #a0d8ef; /* azul bebê */
+  --danger: #ff6b6b; /* vermelho claro */
+  --gold: #ffd93b; /* amarelo fofo */
+  --panel: #fff6e8; /* fundo painel */
+}
+
+html, body {
+  height: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #bde8ff 0%, #fef6e4 100%);
+  color: var(--ink);
+  font-family: "Comic Sans MS", "Segoe UI Rounded", ui-rounded, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.wrap {
+  width: min(980px, 100%);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.topbar h1 {
+  font-size: 18px;
+  margin: 0;
+  letter-spacing: .5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button, .chip {
+  background: linear-gradient(180deg, #ffe4f2, #ffd3e6);
+  color: var(--ink);
+  border: 2px solid #ffb3d1;
+  border-radius: 14px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: .3px;
+  box-shadow: 0 2px 0 #0001 inset, 0 4px 8px #0002;
+  transition: transform .06s ease, filter .15s;
+}
+
+button:hover {
+  filter: brightness(1.05);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+.chip {
+  user-select: none;
+  background: repeating-linear-gradient(#bde8ff 0 2px, #bde8ff 2px 4px);
+  border: 2px solid #ffd3b3;
+}
+
+.hud {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hud .chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.heart {
+  width: 14px;
+  height: 14px;
+  image-rendering: pixelated;
+  background: var(--danger);
+  clip-path: path("M10 3 C10 0 6 0 6 3 C6 0 2 0 2 3 C2 6 5 7.5 6 10 C7 7.5 10 6 10 3 Z");
+}
+
+.score {
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.canvas-wrap {
+  position: relative;
+  background: #fff;
+  border: 2px solid #ffd3b3;
+  border-radius: 20px;
+  padding: 8px;
+  box-shadow: 0 6px 20px #0002, inset 0 0 0 2px #fff3;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  background: repeating-linear-gradient(#bde8ff 0 2px, #bde8ff 2px 4px);
+}
+
+.overlay {
+  position: absolute;
+  inset: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel {
+  background: repeating-linear-gradient(#bde8ff 0 2px, #bde8ff 2px 4px);
+  border: 2px solid #ffd3b3;
+  border-radius: 20px;
+  padding: 18px;
+  max-width: 560px;
+  text-align: center;
+  box-shadow: 0 12px 40px #0002;
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.panel p {
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+
+/* Controles mobile */
+.touch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.touch .pad {
+  position: absolute;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  grid-template-rows: repeat(2, 56px);
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.touch .pad.left {
+  left: 16px;
+}
+
+.touch .pad.right {
+  right: 16px;
+  grid-template-columns: repeat(2, 56px);
+}
+
+.touch button {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff6e8, #ffe4f2);
+  border: 2px solid #ffd3b3;
+  color: var(--ink);
+}
+
+.hidden {
+  display: none;
+}

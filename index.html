@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Defenda o Amigo — Pixel Platformer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <h1>Defenda o Dudu! — Joguinho dos Despenkos</h1>
+      <div class="btns">
+        <button id="btnStart">Iniciar</button>
+        <button id="btnPause">Pausar</button>
+        <button id="btnMute">Som: Off</button>
+      </div>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="game" width="320" height="180" aria-label="Jogo em pixel art"></canvas>
+      <div id="overlay" class="overlay">
+        <div class="panel">
+          <h2>Proteja o Dudu!</h2>
+          <p>Mova-se com A/D ou ◀▶. Pule com W ou ▲. Defenda com Espaço/X. Intercepte os objetos que caem do céu antes que atinjam o Duduzin.</p>
+          <p>Dica: a janela de defesa cria um escudo acima do defensor por um curto período.</p>
+          <div class="btns" style="justify-content:center; margin-top:6px">
+            <button id="btnPlay">Jogar</button>
+          </div>
+        </div>
+      </div>
+      <div class="touch" id="touch">
+        <div class="pad left">
+          <button data-act="left" aria-label="Esquerda">◀</button>
+          <span></span>
+          <button data-act="right" aria-label="Direita">▶</button>
+          <button data-act="jump" aria-label="Pular">⤒</button>
+          <span></span>
+          <button data-act="block" aria-label="Bloquear">⛨</button>
+        </div>
+        <div class="pad right hidden"></div>
+      </div>
+    </div>
+
+    <div class="topbar" style="margin-top:10px">
+      <div class="hud">
+        <div class="chip"><span class="heart"></span><span id="hpTxt">HP: 3</span></div>
+        <div class="chip">Nível: <span id="lvlTxt" style="margin-left:6px">1</span></div>
+        <div class="chip score">Pontuação: <span id="scoreTxt" style="margin-left:6px">0</span></div>
+        <div class="chip">FPS: <span id="fpsTxt" style="margin-left:6px">0</span></div>
+      </div>
+    </div>
+  </div>
+	<audio id="bgm" src="Trilha.mp3" loop></audio>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    const imgVIP = new Image();
+    imgVIP.src = 'dudu.png';
+    const imgDef = new Image();
+    imgDef.src = 'bubu.png';
+    const bgMusic = document.getElementById('bgm');
+
+
+    const ui = {
+      overlay: document.getElementById('overlay'),
+      btnPlay: document.getElementById('btnPlay'),
+      btnStart: document.getElementById('btnStart'),
+      btnPause: document.getElementById('btnPause'),
+      btnMute: document.getElementById('btnMute'),
+      hpTxt: document.getElementById('hpTxt'),
+      lvlTxt: document.getElementById('lvlTxt'),
+      scoreTxt: document.getElementById('scoreTxt'),
+      fpsTxt: document.getElementById('fpsTxt'),
+      touch: document.getElementById('touch'),
+    };
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const G = 0.35;
+    const FRICTION = 0.82;
+    const FLOOR_Y = 150;
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let soundEnabled = false;
+    function beep(freq=440, dur=0.08, type='square', vol=0.03){
+      if(!soundEnabled) return;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type; o.frequency.value = freq; g.gain.value = vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + dur);
+    }
+
+    const state = {
+      running: false,
+      paused: false,
+      level: 1,
+      hp: 3,
+      score: 0,
+      t: 0,
+      spawnTimer: 0,
+      spawnInterval: 70,
+      entities: [],
+      particles: [],
+    };
+
+    const keys = new Set();
+    let justPressed = new Set();
+    window.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      if(['a', 'd', 'w', ' ', 'arrowleft', 'arrowright', 'arrowup', 'x'].includes(k)) e.preventDefault();
+      keys.add(k);
+      justPressed.add(k);
+    });
+    window.addEventListener('keyup', (e) => { keys.delete(e.key.toLowerCase()); });
+
+    const touchMap = {left: false, right: false, jump: false, block: false};
+    ui.touch.querySelectorAll('button[data-act]').forEach(btn => {
+      const act = btn.dataset.act;
+      const on = () => { touchMap[act] = true; btn.classList.add('active'); };
+      const off = () => { touchMap[act] = false; btn.classList.remove('active'); };
+      btn.addEventListener('touchstart', e => { e.preventDefault(); on(); });
+      btn.addEventListener('touchend', e => { e.preventDefault(); off(); });
+      btn.addEventListener('mousedown', on);
+      btn.addEventListener('mouseup', off);
+      btn.addEventListener('mouseleave', off);
+    });
+
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const rand = (a, b) => Math.random() * (b - a) + a;
+
+    class Entity{
+      constructor(x,y){this.x=x;this.y=y;this.vx=0;this.vy=0;this.dead=false;}
+      step(){}
+      draw(){}
+    }
+
+    class VIP extends Entity{
+      constructor(){
+        super(W*0.5, FLOOR_Y-10);
+        this.w=14; this.h=20;
+        this.blink=0;
+        this.dir = (Math.random() < 0.5) ? -0.2 : 0.2;
+        this.moveTimer = 120;
+      }
+      hit(){
+        state.hp--; this.blink=20; beep(160,0.12,'sawtooth',0.05);
+        if(state.hp<=0){ gameOver(); }
+      }
+      step(){
+        if(this.blink>0) this.blink--;
+        this.x += this.dir;
+        if(this.x < W*0.25 || this.x > W*0.75){
+          this.dir *= -1;
+        }
+        this.moveTimer--;
+        if(this.moveTimer <= 0){
+          this.dir = (Math.random() < 0.5) ? -0.2 : 0.2;
+          this.moveTimer = 120;
+        }
+      }
+      draw() {
+        const x = Math.round(this.x);
+        const y = Math.round(this.y);
+        
+        const w = imgVIP.height;
+        const h = imgVIP.width;
+
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(x - w/2, FLOOR_Y + 6, w, 4);
+        ctx.globalAlpha = 1;
+
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(imgVIP, x - w/2, y - h/2, w, h);
+      }
+    }
+
+    class Defender extends Entity{
+      constructor(){
+        super(W*0.5-40, FLOOR_Y-10);
+        this.w=14; this.h=20; this.onGround=false; this.facing=1; this.blockT=0; this.cooldown=0;
+      }
+      input(){
+        const left = keys.has('a') || keys.has('arrowleft') || touchMap.left;
+        const right= keys.has('d') || keys.has('arrowright')|| touchMap.right;
+        const jump = keys.has('w') || keys.has('arrowup') || touchMap.jump;
+        const block= keys.has(' ') || keys.has('x') || touchMap.block;
+        if(left){ this.vx -= 0.6; this.facing=-1; }
+        if(right){ this.vx += 0.6; this.facing= 1; }
+        if(jump && this.onGround){ this.vy = -6.2; this.onGround=false; beep(660,0.06,'square',0.03); }
+        if(block && this.cooldown<=0){ this.blockT = 14; this.cooldown=20; beep(520,0.04,'square',0.02); }
+      }
+      step(){
+        this.input();
+        this.vy += G;
+        this.x += this.vx; this.y += this.vy;
+        this.vx *= FRICTION; if(Math.abs(this.vx)<0.1) this.vx=0;
+        if(this.y+this.h*0.5 >= FLOOR_Y){
+          this.y = FLOOR_Y - this.h*0.5; this.vy=0; this.onGround=true;
+        }
+        this.x = clamp(this.x, 20, W-20);
+        if(this.blockT>0) this.blockT--;
+        if(this.cooldown>0) this.cooldown--;
+      }
+      blockCircle(){
+        return {x:this.x, y:this.y-18, r:12};
+      }
+      draw() {
+        const x = Math.round(this.x);
+        const y = Math.round(this.y);
+        
+
+        const w = 38 //imgVIP.height;
+        const h = 38 //imgVIP.width;
+
+
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(x - w/2, FLOOR_Y + 6, w, 4);
+        ctx.globalAlpha = 1;
+
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(imgDef, x - w/2, y - h/2, w, h);
+
+        if (this.blockT > 0) {
+          const c = this.blockCircle();
+          ctx.globalAlpha = 0.8;
+          ctx.fillStyle = '#60a5fa';
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+
+    class Meteor extends Entity{
+      constructor(){
+        const x = rand(10, W-10);
+        super(x, -20);
+        this.r = rand(4,8);
+        this.type = Math.random()<0.4? 'fire':'rock';
+        const dx = vip.x - this.x;
+        const dy = vip.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const speed = rand(1.5, 2.8);
+        this.vx = (dx / dist) * speed;
+        this.vy = (dy / dist) * speed;
+      }
+      step(){
+        this.x += this.vx; this.y += this.vy;
+        if(this.y - this.r > H+10) this.dead=true;
+        if(!vip.dead){
+          const hit = this.x>vip.x-7 && this.x<vip.x+7 && this.y>vip.y-10 && this.y<vip.y+10;
+          if(hit){ this.dead=true; vip.hit(); burst(this.x,this.y,this.type==='fire'? '#f97316':'#94a3b8'); }
+        }
+        if(def.blockT>0){
+          const c = def.blockCircle();
+          const dx=this.x-c.x, dy=this.y-c.y; if(dx*dx+dy*dy <= (this.r+c.r)*(this.r+c.r)){
+            this.dead=true; state.score+=5; beep(880,0.05,'square',0.04); burst(this.x,this.y,'#60a5fa');
+          }
+        }
+      }
+      draw(){
+        ctx.save();
+        ctx.translate(Math.round(this.x), Math.round(this.y));
+        if(this.type==='fire'){
+          dot(-1,-1,'#fb923c'); dot(0,0,'#fdba74'); dot(1,1,'#ea580c');
+          circlePix(0,0,this.r,'#f59e0b');
+        } else {
+          circlePix(0,0,this.r,'#94a3b8');
+          dot(1,0,'#64748b'); dot(-1,1,'#cbd5e1');
+        }
+        ctx.restore();
+      }
+    }
+
+    function burst(x,y,color){
+      for(let i=0;i<8;i++){
+        state.particles.push({x,y,vx:rand(-1.5,1.5),vy:rand(-1.5,1.5),t:20,c:color});
+      }
+    }
+
+    function dot(x,y,c){ ctx.fillStyle=c; ctx.fillRect(x,y,1,1); }
+    function circlePix(cx,cy,r,c){ ctx.fillStyle=c; for(let y=-r;y<=r;y++) for(let x=-r;x<=r;x++){ if(x*x+y*y<=r*r) ctx.fillRect(cx+x,cy+y,1,1);} }
+
+    let vip;
+    let def;
+
+    let last=0, frames=0, fps=0, fpsT=0;
+    function loop(ts){
+      if(!state.running || state.paused) { requestAnimationFrame(loop); return; }
+      const dt = (ts - last)/16.67; last=ts; state.t++;
+      update(dt); draw();
+      frames++; fpsT+=dt; if(fpsT>=60){ fps=frames; frames=0; fpsT=0; ui.fpsTxt.textContent=fps; }
+      requestAnimationFrame(loop);
+    }
+
+    function update(dt){
+      if(state.t % 1200 === 0){
+        state.level++; ui.lvlTxt.textContent = state.level; state.spawnInterval = Math.max(28, state.spawnInterval-6);
+      }
+      def.step(); vip.step();
+      state.spawnTimer--; if(state.spawnTimer<=0){ state.entities.push(new Meteor()); state.spawnTimer = state.spawnInterval; }
+      state.entities.forEach(e=>e.step());
+      state.entities = state.entities.filter(e=>!e.dead);
+      state.particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vx*=0.98; p.vy*=0.98; p.t--;});
+      state.particles = state.particles.filter(p=>p.t>0);
+      justPressed = new Set();
+    }
+
+    function draw(){
+      ctx.fillStyle = '#f1f1f1'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle = '#422600'; for(let i=0;i<40;i++){ ctx.fillRect(((i*37+state.t)%W), (i*13)%60, 1,1); }
+      ctx.fillStyle = '#422600'; ctx.fillRect(0,FLOOR_Y+12,W, H-(FLOOR_Y+12));
+      ctx.fillStyle = 422600;
+      ctx.globalAlpha=0.08; ctx.fillStyle='#fbbf24'; ctx.beginPath(); ctx.arc(vip.x,vip.y,40,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+      vip.draw(); def.draw();
+      state.entities.forEach(e=>e.draw());
+      state.particles.forEach(p=>{ ctx.globalAlpha = Math.max(0,p.t/20); ctx.fillStyle=p.c; ctx.fillRect(p.x,p.y,1,1); ctx.globalAlpha=1; });
+      ui.hpTxt.textContent = 'HP: ' + state.hp;
+      ui.scoreTxt.textContent = state.score;
+    }
+
+    function start(){
+      state.running = true;
+      state.paused = false;
+      ui.overlay.style.display='none';
+      last=performance.now();
+      requestAnimationFrame(loop);
+ bgMusic.play();
+
+    }
+
+    function pause(){
+      state.paused=!state.paused;
+        bgMusic.pause();
+
+    }
+
+    function reset(){
+      state.running = false;
+      state.paused = false;
+      state.level = 1;
+      state.hp = 3;
+      state.score = 0;
+      state.t = 0;
+      state.spawnTimer = 0;
+      state.spawnInterval = 70;
+      state.entities = [];
+      state.particles = [];
+      def.x = W * 0.5 - 40;
+      def.y = FLOOR_Y - 10;
+      def.vx = 0;
+      def.vy = 0;
+      def.blockT = 0;
+      def.cooldown = 0;
+      vip.x = W * 0.5;
+      vip.y = FLOOR_Y - 10;
+      vip.blink = 0;
+      draw();
+    }
+
+    function gameOver(){
+      state.paused = true;
+      state.running = false;
+      ui.overlay.style.display = 'flex';
+      ui.overlay.querySelector('.panel').innerHTML =
+        `<h2>Fim de Jogo</h2>
+        <p>Sua pontuação: <strong>${state.score}</strong> — Nível ${state.level}</p>
+        <div class="btns" style="justify-content:center; margin-top:6px">
+          <button id="btnAgain">Jogar Novamente</button>
+        </div>`;
+      ui.overlay.querySelector('#btnAgain').addEventListener('click', () => { reset(); start(); });
+      beep(120,0.25,'sawtooth',0.05);
+    }
+
+    setInterval(() => {
+      if(!state.running || state.paused) return;
+      state.score += 1;
+    }, 1000);
+
+    ui.btnPlay.addEventListener('click', () => { reset(); start(); });
+    ui.btnStart.addEventListener('click', () => { reset(); start(); });
+    ui.btnPause.addEventListener('click', () => { pause(); });
+    ui.btnMute.addEventListener('click', () => {
+      soundEnabled = !soundEnabled; ui.btnMute.textContent = 'Som: ' + (soundEnabled ? 'On' : 'Off');
+      if(soundEnabled && audioCtx.state === 'suspended') audioCtx.resume();
+    });
+
+    function fit(){
+      const maxW = Math.min(document.querySelector('.canvas-wrap').clientWidth - 16, 960);
+      const scale = Math.floor(maxW / W);
+      canvas.style.width = (W * scale) + 'px';
+      canvas.style.height= (H * scale) + 'px';
+    }
+    window.addEventListener('resize', fit);
+    fit();
+
+    let imagesToLoad = 2;
+    function checkImagesLoaded() {
+      imagesToLoad--;
+      if (imagesToLoad === 0) {
+        vip = new VIP();
+        def = new Defender();
+        ui.overlay.style.display = 'flex';
+      }
+    }
+    imgVIP.onload = checkImagesLoaded;
+    imgDef.onload = checkImagesLoaded;
+  </script>
+</body>
+</html>
